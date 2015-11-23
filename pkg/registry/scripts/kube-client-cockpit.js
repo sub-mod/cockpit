@@ -463,7 +463,7 @@
                  * connect discovery stuff. Otherwise ask our connect service
                  * for connection info, and do discovery.
                  */
-                if (config.payload)
+                if (config && config.payload)
                     connect = config;
                 else
                     connect = $injector.get('cockpitKubeDiscover')();

@@ -43,7 +43,7 @@
         function($scope, loader, select) {
 
             /* nothing here yet */
-            loader.watch("images");
+            loader.watch(["images"]);
             $scope.images = function() {
                 return select().kind("Image");
             };

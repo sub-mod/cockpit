@@ -37,6 +37,10 @@ define([
         "namespaces" : {
             is_namespaced: false
          },
+        "projects" : {
+            endpoint: API_OPENSHIFT,
+            is_namespaced: false
+         },
         "images" : {
             endpoint: API_OPENSHIFT,
             is_namespaced: false
@@ -48,6 +52,15 @@ define([
             endpoint: API_OPENSHIFT
          },
         "routes" : {
+            endpoint: API_OPENSHIFT,
+         },
+        "users" : {
+            endpoint: API_OPENSHIFT,
+         },
+        "groups" : {
+            endpoint: API_OPENSHIFT,
+         },
+        "policybindings" : {
             endpoint: API_OPENSHIFT,
          },
     };

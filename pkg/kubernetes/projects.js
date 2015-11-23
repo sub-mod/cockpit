@@ -1,75 +1,69 @@
-/*
- * This file is part of Cockpit.
- *
- * Copyright (C) 2015 Red Hat, Inc.
- *
- * Cockpit is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2.1 of the License, or
- * (at your option) any later version.
- *
- * Cockpit is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Cockpit; If not, see <http://www.gnu.org/licenses/>.
- */
+define([
+    "jquery",
+    "base1/cockpit",
+    "base1/angular",
+    "kubernetes/client",
+    "kubernetes/app"
+], function($, cockpit, angular, kubernetes) {
+    'use strict';
 
-(function() {
-    "use strict";
+    var _ = cockpit.gettext;
 
-    angular.module('openshift.projects', [
-        'ngRoute',
-        'kubeClient',
-    ])
-
-    .config([
-        '$routeProvider',
-        function($routeProvider) {
+    return angular.module('kubernetes.projects', ['ngRoute'])
+        .config(['$routeProvider', function($routeProvider) {
             $routeProvider.when('/projects', {
                 templateUrl: 'views/projects-page.html',
-                controller: 'ProjectsCtrl',
-                reloadOnSearch: false,
+                controller: 'ProjectsCtrl'
             });
-        }
-    ])
+        }])
 
-    .controller('ProjectsCtrl', [
-        '$scope',
-        'kubeLoader',
-        'kubeSelect',
-        function($scope, loader, select) {
+        /*
+         * The controller for the projects view.
+         */
+        .controller('ProjectsCtrl', [
+            '$scope',
+            'kubernetesClient',
+            function($scope, client) {
 
-            loader.watch(["users"]);
-            loader.watch(["groups"]);
-            loader.watch(["policybindings"]);
-            loader.load("projects");
+                client.include("users");
+                client.include("groups");
+                client.include("policybindings");
 
-            $scope.users = function() {
-                return select().kind("User");
-            };
+                var lists = {
+                    Namespace: null,
+                    User: null,
+                    Group: null,
+                    PolicyBinding: null
+                };
 
-            $scope.groups = function() {
-                return select().kind("Group");
-            };
+                Object.keys(lists).forEach(function(kind) {
+                    lists[kind] = client.select(kind);
+                    client.track(lists[kind]);
+                    $(lists[kind]).on("changed", function() {
+                        $scope.$digest();
+                    });
+                });
 
-            $scope.policybindings = function() {
-                return select().kind("PolicyBinding");
-            };
+                angular.extend($scope, {
+                    projects: lists.Namespace,
+                    users: lists.User,
+                    groups: lists.Group,
+                    policybindings: lists.PolicyBinding
+                });
 
-            $scope.projects = function() {
-                return select().kind("Project");
-            };
+                $scope.$on("$destroy", function() {
+                    angular.forEach(lists, function(list) {
+                        client.track(list, false);
+                    });
+                });
 
 
-/* 
                 var name_list = {
                     usernames: null,
                     groupnames: null
                 };
-               $scope.get_all_members = function get_all_members() {
+
+/*                $scope.get_all_members = function get_all_members() {
                     name_list.usernames = [];
                     name_list.groupnames = [];
 
@@ -111,7 +105,7 @@
                     }
                     return mlist;
                 };
-        }
-    ]);
 
-}());
+            }
+        ]);
+});

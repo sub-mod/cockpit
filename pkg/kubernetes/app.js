@@ -16,6 +16,7 @@ define([
             'kubernetes.details',
             'kubernetes.graph',
             'kubernetes.images',
+            'kubernetes.projects',
             'kubernetes.topology'
         ])
         .config(['$routeProvider', function($routeProvider) {
