@@ -149,11 +149,11 @@
 
     .factory("CockpitKubeWatch", [
         "$q",
-        "KUBE_SCHEMA",
+        "API_SCHEMA",
         "cockpitKubeDiscover",
-        function($q, KUBE_SCHEMA, cockpitKubeDiscover) {
-            return function CockpitKubeWatch(path, callback) {
-                debug("creating watch:", path);
+        function($q, API_SCHEMA, cockpitKubeDiscover) {
+            return function CockpitKubeWatch(type, namespace, callback) {
+                debug("creating kube watch:", type, namespace);
 
                 /* Used to track the last resource for restarting query */
                 var lastResource;
@@ -166,6 +166,9 @@
 
                 /* The http options */
                 var http = null;
+
+                /* The base api endpoint */
+                var schema = API_SCHEMA[type] || { api: "/api/v1" };
 
                 /* Waiting to do the next http request */
                 var wait = null;
@@ -190,7 +193,6 @@
                  */
 
                 var defer = $q.defer();
-                var promise = defer;
                 var loaded = false;
                 var objects = { };
                 var previous;
@@ -209,30 +211,32 @@
                 function load_poke(force) {
                     if (force || loading !== undefined) {
                         window.clearTimeout(loading);
-                        loading = window.setTimeout(load_finish, 100);
+                        loading = window.setTimeout(load_ready, 100);
                     }
+                }
+
+                function load_ready() {
+                    var key, prev;
+
+                    if (loading !== undefined) {
+                        window.clearTimeout(loading);
+                        loading = undefined;
+
+                        /* Notify caller about objects gone after reload */
+                        prev = previous;
+                        previous = null;
+                        if (prev)
+                            callback([], prev);
+                    }
+
+                    load_finish();
                 }
 
                 function load_finish(ex) {
                     if (loaded)
                         return;
                     loaded = true;
-
-                    var key, prev, frames = [];
-                    prev = previous;
-                    previous = null;
-                    for (key in prev) {
-                        if (!(key in objects))
-                            frames.push({ type: "DELETED", object: prev[key] });
-                    }
-
-                    /* Simulated delete frames */
-                    if (frames.length)
-                        callback(frames);
-
-                    /* Tell callback to flush */
-                    callback([]);
-
+                    callback([], []);
                     if (ex)
                         defer.resolve();
                     else
@@ -285,14 +289,13 @@
                         }
 
                         var meta = object.metadata;
-                        if (!meta || !meta.uid || !object.kind) {
+                        if (!meta || !meta.uid || object.apiVersion != "v1" || !object.kind) {
                             console.warn("invalid kube object: ", object);
                             continue;
                         }
 
                         lastResource = meta.resourceVersion;
 
-                        /* We track objects here so we can restart watches */
                         var uid = meta.uid;
                         if (frame.type == "DELETED")
                             delete objects[uid];
@@ -312,7 +315,13 @@
                         return;
 
                     var full = true;
-                    var uri = path + "?watch=true";
+                    var uri = schema.api + "/watch";
+                    var params;
+
+                    if (!schema.global && namespace)
+                        uri += "/namespaces/" + namespace;
+
+                    uri += "/" + type;
 
                     /*
                      * If we have a last resource we can guarantee that we don't miss
@@ -320,7 +329,7 @@
                      * have to list everything again. Still watch at the same time though.
                      */
                     if (lastResource) {
-                        uri += "&resourceVersion=" + encodeURIComponent(lastResource);
+                        uri += "?resourceVersion=" + lastResource;
                         full = false;
                     }
 
@@ -365,7 +374,7 @@
                         if (stopping)
                             return;
 
-                        var msg = "watching " + path + " failed:";
+                        var msg = "watching kube " + type + " failed: ";
                         var problem = options.problem;
                         var status = response.status;
 
@@ -393,7 +402,7 @@
                             load_finish(response);
 
                         } else if (!blocked) {
-                            console.warn("watching kube " + path + " didn't block");
+                            console.warn("watching kube " + type + " didn't block");
 
                         } else {
                             start_watch();
@@ -421,7 +430,7 @@
                     start_watch();
                 });
 
-                promise.cancel = function cancel(ex) {
+                defer.promise.cancel = function cancel(ex) {
                     stopping = true;
                     var problem;
                     if (channel) {
@@ -436,7 +445,7 @@
                     load_finish(ex);
                 };
 
-                return promise;
+                return defer.promise;
             };
         }
     ])
@@ -445,18 +454,9 @@
         "$q",
         "$injector",
         function($q, $injector) {
-            var content_type = "Content-Type";
-            var json_type = "application/json";
-            return function CockpitKubeRequest(method, path, body, config) {
+            return function CockpitHttpRequest(method, path, body, config) {
                 var defer = $q.defer();
-                var promise = defer.promise;
                 var connect, channel;
-
-                var heads = { };
-                if (body && typeof body == "object") {
-                    body = JSON.stringify(body);
-                    heads[content_type] = json_type;
-                }
 
                 /*
                  * If we're called with fully formed options, then don't do
@@ -474,7 +474,6 @@
                         method: method
                     });
 
-                    opts.headers = angular.extend(heads, opts.headers || { });
                     channel = cockpit.channel(opts);
 
                     var response = { };
@@ -490,21 +489,11 @@
                     });
 
                     channel.addEventListener("close", function(ev, options) {
-                        var type;
                         channel = null;
 
                         if (options.problem) {
                             response.problem = response.statusText = options.problem;
                             response.status = 999;
-                        }
-
-                        var headers = response.headers || { };
-                        if (headers[content_type] == json_type) {
-                            try {
-                                response.data = JSON.parse(response.data);
-                            } catch (ex) {
-                                /* it's not JSON, just leave as text */
-                            }
                         }
 
                         if (response.status > 299) {
@@ -515,8 +504,7 @@
                         }
                     });
 
-                    if (body)
-                        channel.send(body);
+                    /* No http request body */
                     channel.control({ command: "done" });
 
                 /* Failed to connect */
@@ -525,14 +513,14 @@
                 });
 
                 /* Helpful function on the promise */
-                promise.cancel = function cancel() {
+                defer.promise.cancel = function cancel() {
                     if (connect.cancel)
                         connect.cancel();
                     if (channel)
                         channel.close("cancelled");
                 };
 
-                return promise;
+                return defer.promise;
             };
         }
     ])
@@ -542,7 +530,6 @@
         function($q) {
             return function cockpitKubectlConfig() {
                 var defer = $q.defer();
-                var promise = defer.promise;
                 var channel = cockpit.channel({
                     "payload": "stream",
                     "spawn": ["kubectl", "config", "view", "--output=json", "--raw"],
@@ -561,11 +548,11 @@
                         defer.resolve(result);
                 });
 
-                promise.cancel = function cancel(options) {
+                defer.promise.cancel = function cancel(options) {
                     if (channel)
                         channel.close(options || "cancelled");
                 };
-                return promise;
+                return defer.promise;
             };
         }
     ])
@@ -605,15 +592,28 @@
                     debug("trying kube at:", options);
                     req = new CockpitKubeRequest("GET", "/api", "", options);
                     req.then(function(response) {
+                        var resp;
                         req = null;
-                        var resp = response.data;
-                        if (resp && resp.versions) {
-                            debug("discovered kube api", resp);
-                            defer.resolve(options, kube_config);
-                        } else {
-                            debug("not an api endpoint:", options);
+
+                        try {
+                            /*
+                             * We expect a response that looks something like:
+                             * { "versions": [ "v1beta1", "v1beta2", "v1" ] }
+                             */
+                            resp = JSON.parse(response.data);
+                            if (!resp.versions)
+                                resp = null;
+                        } catch(ex) {
+                            resp = null;
+                        }
+
+                        if (!resp) {
+                            debug("not an api endpoint without JSON data on:", options);
                             last = response;
                             step();
+                        } else {
+                            debug("discovered kube api", resp);
+                            defer.resolve(options, kube_config);
                         }
                     })
                     .catch(function(response) {
