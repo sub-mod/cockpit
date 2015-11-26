@@ -150,64 +150,6 @@
         };
     }
 
-    /*
-     * A WeakMap implementation
-     *
-     * This works on ES5 browsers, with the caveat that the mapped
-     * items are discoverable with enough work.
-     *
-     * To be clear, the principal use of a WeakMap is to associate
-     * an value with an object, the object is the key. And then have
-     * that value go away when the object does. This is very, very
-     * similar to properties.
-     *
-     * The main difference is that any assigned values are not
-     * garbage collected if the *weakmap* itself is collected,
-     * and of course one can actually access the non-enumerable
-     * property that makes this work.
-     */
-
-    var weak_property = Math.random().toString(36).slice(2);
-    var local_seed = 1;
-
-    function SimpleWeakMap() {
-        var local_property = "weakmap" + local_seed;
-        local_seed += 1;
-
-        var self = this;
-
-        self.delete = function delete_(obj) {
-            var x, map = obj[weak_property];
-            if (map)
-                delete map[local_property];
-        };
-
-        self.has = function has(obj) {
-            var map = obj[weak_property];
-            return (map && local_property in map);
-        };
-
-        self.get = function has(obj) {
-            var map = obj[weak_property];
-            if (!map)
-                return undefined;
-            return map[local_property];
-        };
-
-        self.set = function set(obj, value) {
-            var map = obj[weak_property];
-            if (!map) {
-                map = function WeakMapData() { };
-                Object.defineProperty(obj, weak_property, {
-                    enumerable: false, configurable: false,
-                    writable: false, value: map,
-                });
-            }
-
-            map[local_property] = value;
-        };
-    }
-
     function flatSchema(items) {
         var i, len, ret = { "": DEFAULT };
         for (i = 0, len = items.length; i < len; i++) {
@@ -566,22 +508,16 @@
      * containing unique keys, and then various filters can be called to
      * further narrow results.
      *
-     * You can also pass a dict of objects into kubeSelect() and then
-     * perform actions on it.
-     *
      * The following filters are available by default:
      *
      *  .kind(kind)       Limit to specified kind
      *  .namespace(ns)    Limit to specified namespace
      *  .name(name)       Limit to this name
      *  .label(selector)  Limit to objects whose label match selector
-     *  .one()            Choose one of results, or null
-     *  .extend(obj)      Extend obj with the results
      *
      * Additional filters can be registered by calling the function:
      *
-     *   kubeSelect.register(name, function)
-     *   kubeSelect.register(filterobj)
+     *   kubeSelect.register(filter)
      *
      * Ask on FreeNode #cockpit for documentation on filters.
      */
@@ -594,106 +530,50 @@
 
             /* A hash index */
             var index = null;
-            var indexers = null;
 
             /* The filter prototype for functions available on selector */
             var proto = null;
 
-            /* Cache data */
-            var weakmap = new SimpleWeakMap();
-            var version = 1;
+            /* A cache of the everything selection */
+            var everything = null;
 
             loader.listen(function(present, removed) {
-                version += 1;
+                everything = null;
 
                 /* Get called like this when reset */
-                if (!present) {
+                if (!present)
                     index = null;
-                    indexers = null;
 
                 /* Called like this when more objects arrive */
-                } else if (index) {
+                else if (index)
                     indexObjects(present);
-                }
             }, true);
 
             /* Create a new index and populate */
             function indexCreate() {
-                var name, filter;
-
                 /* TODO: Derive this value from cluster size */
                 index = new HashIndex(262139);
-
-                /* Figure out which indexers to use */
-                indexers = [];
-                for (name in filters) {
-                    filter = filters[name];
-                    if (filter.keys)
-                        indexers.push(filter);
-                }
-
-                /* And index all the objects */
                 indexObjects(loader.objects);
             }
 
             /* Populate index for the given objects and current filters */
             function indexObjects(objects) {
-                var link, object, i, len;
+                var link, object, name;
                 for (link in objects) {
                     object = objects[link];
-                    for (i = 0, len = indexers.length; i < len; i++)
-                        index.add(indexers[i].keys(object), link);
+                    for (name in filters)
+                        index.add(filters[name].keys(object), link);
                 }
-            }
-
-            /* Return a place to cache data related to obj */
-            function cached(obj) {
-                var data = weakmap.get(obj);
-                if (!data || data.version !== version) {
-                    data = { version: version, length: data ? data.length : undefined };
-                    weakmap.set(obj, data);
-                }
-                return data;
             }
 
             function makePrototypeCall(filter) {
                 return function() {
-                    var cache = cached(this);
-
-                    /*
-                     * Do this early, since some browsers cannot pass
-                     * arguments to JSON.stringify()
-                     */
-                    var args = Array.prototype.slice.call(arguments);
-
-                    /* Fast path, already calculated results */
-                    var desc = filter.name + ": " + JSON.stringify(args);
-                    var results = cache[desc];
-                    if (results)
-                        return results;
-
-                    if (filter.criteria) {
-                        args = filter.criteria.apply(filter, args);
-                        results = filter.filter.call(filter, this, args, cache);
-                    } else {
-                        args.unshift(this);
-                        args.push(cache);
-                        results = filter.filter.apply(filter, args);
-                    }
-
-                    cache[desc] = results;
-                    return results;
+                    return filter.filter(this, arguments);
                 };
             }
 
             function makePrototype() {
-                var name, ret = {
-                    length: {
-                        enumerable: false,
-                        configurable: true,
-                        get: function() { return cached(this).length; }
-                    }
-                };
+                var name, ret = { };
                 for (name in filters) {
                     ret[name] = {
                         enumerable: false,
@@ -704,8 +584,8 @@
                 return ret;
             }
 
-            function mixinSelection(results, length, indexed) {
-                var link, data;
+            function mixinSelection(results, length) {
+                var x, link;
                 if (length === undefined) {
                     length = 0;
                     for (link in results)
@@ -713,36 +593,51 @@
                 }
                 proto = proto || makePrototype();
                 Object.defineProperties(results, proto);
-                data = cached(results);
-                data.length = length;
-                data.selection = results;
-                data.indexed = indexed;
+
+                /* This would be a *perfect* place to use WeakMap */
+                Object.defineProperties(results, {
+                    _data: {
+                        enumerable: false,
+                        configurable: true,
+                        value: { }
+                    },
+                    length: {
+                        enumerable: false,
+                        configurable: true,
+                        value: length
+                    }
+                });
+
+                /* Some browsers don't redefine the properties right */
+                for (x in results._data)
+                    delete results._data[x];
+
                 return results;
             }
 
-            function defaultFilter(what, criteria, cache) {
+            function defaultFilter(what, args) {
                 /* jshint validthis: true */
                 var filter = this;
+                var criteria = filter.criteria.apply(filter, args);
+
+                /* Fast path, already calculated results */
+                var desc = filter.name + ": " + JSON.stringify(criteria);
+                var results = what._data[desc];
+                if (results)
+                    return results;
 
                 /* Digest down to possible matches */
-                var possible, keys;
-                if (filter.keys) {
-                    keys = filter.keys(criteria);
-                    if (keys.length) {
-                        if (!index)
-                            indexCreate();
-                        if (!cache.indexed) {
-                            indexObjects(what);
-                            cache.indexed = true;
-                        }
-                        possible = index.all(keys);
-                    }
+                var possible, keys = filter.keys(criteria);
+                if (keys.length) {
+                    if (!index)
+                        indexCreate();
+                    possible = index.all(keys);
+                } else {
+                    possible = Object.keys(what);
                 }
 
-                if (!possible)
-                    possible = Object.keys(what);
+                results = { };
 
-                var results = { };
                 var i, len, object, link, count = 0;
                 for (i = 0, len = possible.length; i < len; i++) {
                     link = possible[i];
@@ -753,41 +648,33 @@
                     }
                 }
 
-                return mixinSelection(results, count, true);
+                results = mixinSelection(results, count);
+
+                /* In case we get called again */
+                what._data[desc] = results;
+                return results;
             }
 
-            function registerFilter(filter, optional) {
-                if (typeof (optional) == "function") {
-                    filter = {
-                        name: filter,
-                        filter: optional,
-                    };
-                }
-
+            function registerFilter(filter) {
                 filters[filter.name] = filter;
                 if (!filter.filter)
                     filter.filter = defaultFilter;
-
-                indexers = null;
                 index = null;
                 proto = null;
-                version += 1;
             }
 
             /* The one filter */
-            registerFilter("one", function(what) {
-                var link;
-                for (link in what)
-                    return what[link];
-                return null;
-            });
-
-            /* The extend filter */
-            registerFilter("extend", function(what, target) {
-                var link;
-                for (link in what)
-                    target[link] = what[link];
-                return target;
+            registerFilter({
+                name: "one",
+                keys: function() {
+                    return [];
+                },
+                filter: function(what, args) {
+                    var link;
+                    for (link in what)
+                        return what[link];
+                    return null;
+                }
             });
 
             /* The label filter */
@@ -864,18 +751,10 @@
                 }
             });
 
-            function select(what) {
-                var results, indexed = false;
-                if (!what) {
-                    what = loader.objects;
-                    indexed = true;
-
-                } else if (angular.isArray(what) || typeof (what) != "object") {
-                    console.warn("You should pass object dicts or null to kubeSelect()");
-                    return null;
-                }
-
-                return cached(what).selection || mixinSelection(what, undefined, indexed);
+            function select() {
+                if (!everything)
+                    everything = mixinSelection(loader.objects);
+                return everything;
             }
 
             /* A seldom used 'static' method */
