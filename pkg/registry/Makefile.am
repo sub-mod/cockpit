@@ -13,6 +13,8 @@ registry_MODULES = \
 	pkg/registry/scripts/dashboard.js \
 	pkg/registry/scripts/exceptions.js \
 	pkg/registry/scripts/images.js \
+	pkg/registry/scripts/kube-client.js \
+	pkg/registry/scripts/kube-client-cockpit.js \
 	pkg/registry/scripts/projects.js \
 	pkg/registry/scripts/main.js \
 	$(NULL)
