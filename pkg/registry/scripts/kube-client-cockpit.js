@@ -168,7 +168,7 @@
                 var http = null;
 
                 /* The base api endpoint */
-                var schema = KUBE_SCHEMA[type] || { api: "/api/v1" };
+                var schema = KUBE_SCHEMA[type] || KUBE_SCHEMA[""];
 
                 /* Waiting to do the next http request */
                 var wait = null;
