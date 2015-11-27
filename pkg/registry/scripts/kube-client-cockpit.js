@@ -149,9 +149,9 @@
 
     .factory("CockpitKubeWatch", [
         "$q",
-        "API_SCHEMA",
+        "KUBE_SCHEMA",
         "cockpitKubeDiscover",
-        function($q, API_SCHEMA, cockpitKubeDiscover) {
+        function($q, KUBE_SCHEMA, cockpitKubeDiscover) {
             return function CockpitKubeWatch(type, namespace, callback) {
                 debug("creating kube watch:", type, namespace);
 
@@ -168,7 +168,7 @@
                 var http = null;
 
                 /* The base api endpoint */
-                var schema = API_SCHEMA[type] || { api: "/api/v1" };
+                var schema = KUBE_SCHEMA[type] || { api: "/api/v1" };
 
                 /* Waiting to do the next http request */
                 var wait = null;
@@ -461,11 +461,9 @@
                 var connect, channel;
 
                 var heads = { };
-                if (body) {
-                    if (typeof body != "string") {
-                        body = JSON.stringify(body);
-                        heads[content_type] = json_type;
-                    }
+                if (body && typeof body == "object") {
+                    body = JSON.stringify(body);
+                    heads[content_type] = json_type;
                 }
 
                 /*
@@ -492,8 +490,6 @@
                         if (options.command == "response") {
                             response = options;
                             response.statusText = response.reason;
-                            if (!response.headers)
-                                response.headers = { };
                         }
                     });
 
@@ -508,11 +504,16 @@
                         if (options.problem) {
                             response.problem = response.statusText = options.problem;
                             response.status = 999;
-                        } else {
-                            type = response.headers[content_type];
-                            if (type && type.toLowerCase
-                            if (response.headers && response.headers[content_type]
-                                xxxx parse type xxxx
+                        }
+
+                        var headers = response.headers || { };
+                        if (headers[content_type] == json_type) {
+                            try {
+                                response.data = JSON.parse(response.data);
+                            } catch (ex) {
+                                /* it's not JSON, just leave as text */
+                            }
+                        }
 
                         if (response.status > 299) {
                             update_message(response);
@@ -611,28 +612,15 @@
                     debug("trying kube at:", options);
                     req = new CockpitKubeRequest("GET", "/api", "", options);
                     req.then(function(response) {
-                        var resp;
                         req = null;
-
-                        try {
-                            /*
-                             * We expect a response that looks something like:
-                             * { "versions": [ "v1beta1", "v1beta2", "v1" ] }
-                             */
-                            resp = JSON.parse(response.data);
-                            if (!resp.versions)
-                                resp = null;
-                        } catch(ex) {
-                            resp = null;
-                        }
-
-                        if (!resp) {
-                            debug("not an api endpoint without JSON data on:", options);
-                            last = response;
-                            step();
-                        } else {
+                        var resp = response.data;
+                        if (resp && resp.versions) {
                             debug("discovered kube api", resp);
                             defer.resolve(options, kube_config);
+                        } else {
+                            debug("not an api endpoint:", options);
+                            last = response;
+                            step();
                         }
                     })
                     .catch(function(response) {
