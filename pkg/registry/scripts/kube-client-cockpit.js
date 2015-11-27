@@ -454,9 +454,19 @@
         "$q",
         "$injector",
         function($q, $injector) {
+            var content_type = "Content-Type";
+            var json_type = "application/json";
             return function CockpitHttpRequest(method, path, body, config) {
                 var defer = $q.defer();
                 var connect, channel;
+
+                var heads = { };
+                if (body) {
+                    if (typeof body != "string") {
+                        body = JSON.stringify(body);
+                        heads[content_type] = json_type;
+                    }
+                }
 
                 /*
                  * If we're called with fully formed options, then don't do
@@ -474,6 +484,7 @@
                         method: method
                     });
 
+                    opts.headers = angular.extend(heads, opts.headers || { });
                     channel = cockpit.channel(opts);
 
                     var response = { };
@@ -481,6 +492,8 @@
                         if (options.command == "response") {
                             response = options;
                             response.statusText = response.reason;
+                            if (!response.headers)
+                                response.headers = { };
                         }
                     });
 
@@ -489,12 +502,17 @@
                     });
 
                     channel.addEventListener("close", function(ev, options) {
+                        var type;
                         channel = null;
 
                         if (options.problem) {
                             response.problem = response.statusText = options.problem;
                             response.status = 999;
-                        }
+                        } else {
+                            type = response.headers[content_type];
+                            if (type && type.toLowerCase
+                            if (response.headers && response.headers[content_type]
+                                xxxx parse type xxxx
 
                         if (response.status > 299) {
                             update_message(response);
@@ -504,7 +522,8 @@
                         }
                     });
 
-                    /* No http request body */
+                    if (body)
+                        channel.send(body);
                     channel.control({ command: "done" });
 
                 /* Failed to connect */
