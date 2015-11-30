@@ -37,10 +37,8 @@
 
     function dispatch_notify() {
         var i, len = handlers.length;
-        for (i = 0; i < len; i++) {
-            if (handlers[i])
-                handlers[i].apply(kube_data, arguments);
-        }
+        if (handlers[i])
+            handlers[i].apply(kube_data, arguments);
     }
 
     function guid() {
@@ -96,38 +94,33 @@
             req.mock_respond(200, "OK", { }, JSON.stringify({
                 versions: [ "v1" ]
             }));
+            return true;
         }
 
-        if (parts[0] != "api" && parts[0] != "oapi" && parts[1] != "v1") {
-            req.mock_respond(404, "Not API");
-            return;
-        }
+        if (parts[0] != "api" && parts[0] != "oapi" && parts[1] != "v1")
+            return false;
 
         var base_uri = "/" + parts.slice(0, 2).join("/");
         parts = parts.slice(2);
 
-        var ret = false;
         if (req.method === "POST") {
-            ret = kube_api_post(req, parts, query, base_uri);
+            return kube_api_post(req, parts, query, base_uri);
         } else if (req.method === "GET") {
-            ret = kube_api_get(req, parts, query, base_uri);
+            return kube_api_get(req, parts, query, base_uri);
         } else if (req.method === "DELETE") {
-            ret = kube_api_delete(req, parts, query, base_uri);
+            return kube_api_delete(req, parts, query, base_uri);
         }  else {
             req.mock_respond(405, "Unsupported method");
-            ret = true;
+            return true;
         }
-
-        if (!ret)
-            req.mock_respond(404, "Not found");
     }
 
-    function kube_update(key, object) {
+    function kube_update(key, item) {
         var type;
-        if (!object) {
+        if (!item) {
             if (kube_data[key]) {
                 type = "DELETED";
-                object = kube_data[key];
+                item = kube_data[key];
                 delete kube_data[key];
             } else {
                 return null;
@@ -137,18 +130,18 @@
                 type = "MODIFIED";
             else
                 type = "ADDED";
-            kube_data[key] = object;
+            kube_data[key] = item;
         }
 
-        if (!object.metadata)
-            object.metadata = { };
-        if (!object.metadata.uid)
-            object.metadata.uid = guid();
-        object.metadata.resourceVersion = kube_last;
+        if (!item.metadata)
+            item.metadata = { };
+        if (!item.metadata.uid)
+            item.metadata.uid = guid();
+        item.metadata.resourceVersion = kube_last;
         kube_last += 1;
 
-        dispatch_notify(type, key, object);
-        return object;
+        dispatch_notify([ type, key, item ]);
+        return item;
     }
 
     function kube_api_get(req, parts, query, base_uri) {
@@ -157,8 +150,9 @@
 
         /* Figure out if this is a watch */
         var watch = false;
-        if (query.hasOwnProperty("watch")) {
+        if (query.watch) {
             watch = true;
+            what = parts.shift();
             if (query.resourceVersion) {
                 resourceVersion = parseInt(query.resourceVersion, 10);
                 if (isNaN(resourceVersion))
@@ -177,10 +171,10 @@
         var kind = null;
         var regexp = null;
 
-        function prepare(key, object) {
+        function prepare(key, item) {
             if (resourceVersion) {
-                if (!object.metadata || !object.metadata.resourceVersion ||
-                    object.metadata.resourceVersion < resourceVersion)
+                if (!item.metadata || !item.metadata.resourceVersion ||
+                    item.metadata.resourceVersion < resourceVersion)
                     return null;
             }
             if (specific) {
@@ -192,15 +186,15 @@
                     return null;
             }
 
-            var copy = JSON.parse(JSON.stringify(object));
-            copy.metadata.selfLink = base_uri + "/" + key;
+            var copy = angular.merge({ }, item);
+            copy.selfLink = base_uri + "/" + key;
             copy.apiVersion = "v1";
             return copy;
         }
 
         /* Various lists */
         if (what == "namespaces") {
-            regexp = /namespaces\/[a-z0-9-_]+$/;
+            regexp = /namespaces\/[a-zA-Z0-9-_]+$/;
             kind = "NamespaceList";
         } else if (what == "nodes") {
             regexp = /nodes\//;
@@ -237,46 +231,41 @@
             };
 
             angular.forEach(kube_data, function(value, key) {
-                var object = prepare(key, value);
-                if (object)
-                    items.push(object);
+                var item = prepare(key, value);
+                if (item)
+                    items.push(item);
             });
 
             req.mock_respond(200, "OK", { "Content-Type": "application/json" }, JSON.stringify(result));
-            return true;
+        }
+
+        function stream_watch(ex, type, key, value) {
+            var item = prepare(key, value);
+            if (item)
+                req.mock_data(JSON.stringify({ type: type, object: item }) + "\n", true);
         }
 
         function respond_watch() {
-            req.mock_respond(200, "OK", { "Content-Type": "text/plain; charset=utf-8" }, null);
+            req.mock_respond(200, "OK", { "Content-Type": "text/plain; charset=utf-8" });
 
-            var body = "";
             angular.forEach(kube_data, function(value, key) {
-                var object = prepare(key, value);
-                if (object)
-                    body += JSON.stringify({ type: "ADDED", object: object }) + "\n";
+                var item = prepare(key, value);
+                if (item)
+                    req.mock_data(JSON.stringify({ type: "ADDED", object: item }) + "\n", true);
             });
 
-            function stream_watch(type, key, value) {
-                var object = prepare(key, value);
-                if (object)
-                    req.mock_data(JSON.stringify({ type: type, object: object }) + "\n", true);
-            }
-
             add_notify(stream_watch);
-            req.mock_data(body, true);
 
             window.setTimeout(function() {
                 remove_notify(stream_watch);
                 req.mock_data("", false);
             }, 5000);
-
-            return true;
         }
 
         if (watch)
-            return respond_watch();
+            respond_watch();
         else
-            return respond_get();
+            respond_get();
     }
 
     function kube_api_post(req, parts, query, base_uri) {
@@ -294,26 +283,26 @@
             return false;
         }
 
-        var object;
+        var item;
         try {
-            object = JSON.parse(req.body);
+            item = JSON.parse(req.body);
         } catch(ex) {
             req.mock_respond(400, "Bad JSON");
-            return true;
+            return;
         }
 
-        var kind = object.kind;
-        var meta = object.metadata || { };
+        var kind = item.kind;
+        var meta = item.metadata || { };
         var name = meta.name;
 
         if (!kind || !meta || !name) {
             req.mock_respond(400, "Bad fields in JSON");
-            return true;
+            return;
         }
 
         if (kind.toLowerCase() + "s" != section) {
             req.mock_respond(400, "Bad section of URI");
-            return true;
+            return;
         }
 
         parts.push(name);
@@ -322,11 +311,11 @@
         if (kube_data[key]) {
             req.mock_respond(409, "Already exists", { "Content-Type": "application/json" },
                              JSON.stringify({ code: 409, message: "Already exists" }));
-            return true;
+            return;
         }
 
-        kube_update(key, object);
-        req.mock_respond(200, "OK", { "Content-Type": "application/json" }, JSON.stringify(object));
+        kube_update(key, item);
+        req.mock_respond(200, "OK", { "Content-Type": "application/json" }, JSON.stringify(item));
         return true;
     }
 
@@ -360,9 +349,11 @@
 
     .value("MockKubeData", {
         load: function load(data) {
-            kube_data = JSON.parse(JSON.stringify(data));
-        },
-        update: kube_update
+            if (data && typeof data === "object")
+                kube_data = data;
+            else
+                kube_data = JSON.parse(data);
+        }
     })
 
     .factory("MockKubeWatch", [
@@ -372,13 +363,9 @@
         function($q, KUBE_SCHEMA, MockKubeRequest) {
             return function CockpitKubeWatch(path, callback) {
                 var defer = $q.defer();
-                var promise = defer.promise;
-
-                unique += 1;
 
                 var request = new MockKubeRequest("GET", path + "?watch=true", "", {
-                    streamer: handle_stream,
-                    unique: unique,
+                    streamer: handle_stream
                 });
 
                 var buffer;
@@ -408,40 +395,35 @@
 
                     callback(frames);
 
-                    var df = defer;
-                    if (df) {
-                        callback([]);
+                    if (defer) {
+                        defer.resolve(response);
                         defer = null;
-                        df.resolve(response);
                     }
                 }
 
                 request.then(function(response) {
-                    var df = defer;
+                    if (defer)
+                        defer.resolve(response);
                     defer = null;
-                    if (df)
-                        df.resolve(response);
                 }, function(response) {
-                    var df = defer;
+                    if (defer)
+                        defer.reject(response);
                     defer = null;
-                    if (df)
-                        df.reject(response);
                 });
 
-                promise.cancel = function cancel() {
-                    var df = defer;
+                defer.promise.cancel = function cancel() {
                     if (request)
                         request.cancel();
-                    if (df) {
-                        defer = null;
-                        df.reject({
+                    if (defer) {
+                        defer.reject({
                             status: 999,
                             statusText: "Cancelled",
                             problem: "cancelled",
                         });
+                        defer = null;
                     }
                 };
-                return promise;
+                return defer.promise;
             };
         }
     ])
@@ -452,17 +434,14 @@
             return function MockKubeRequest(method, path, data, config) {
                 var req = angular.extend({ }, config, { method: method, path: path, body: data });
                 var defer = $q.defer();
-                var promise = defer.promise;
                 var response;
+
                 function finish() {
-                    var df = defer;
-                    defer = null;
-                    if (response.headers["Content-Type"] == "application/json")
-                        response.data = JSON.parse(response.data);
                     if (response.status < 300)
-                        df.resolve(response);
+                        defer.resolve(response);
                     else
-                        df.reject(response);
+                        defer.reject(response);
+                    defer = null;
                 }
 
                 req.mock_respond = function(status, reason, headers, body) {
@@ -471,18 +450,17 @@
                     response = {
                         status: status,
                         statusText: reason,
-                        headers: headers || { },
+                        headers: headers,
                         data: "",
-                        unique: req.unique,
                     };
-                    if (body !== null)
-                        req.mock_data(body || "", false);
+                    if (body !== undefined)
+                        req.mock_data(body, false);
                 };
 
                 req.mock_data = function(body, stream) {
                     if (!defer)
                         return;
-                    if (typeof (body) !== "string")
+                    if (typeof (body !== "string"))
                         body = JSON.stringify(body);
                     if (req.streamer)
                         req.streamer(body, response);
@@ -492,7 +470,7 @@
                         finish();
                 };
 
-                promise.cancel = function cancel() {
+                defer.promise.cancel = function cancel() {
                     if (!defer)
                         return;
                     defer.reject({
@@ -500,15 +478,12 @@
                         statusText: "Cancelled",
                         problem: "cancelled",
                     });
-                    defer = null;
                 };
 
                 kube_apiserver(req);
-                return promise;
+                return defer.promise;
             };
         }
     ]);
-
-    var unique = 0;
 
 }());
