@@ -152,8 +152,8 @@
         "KUBE_SCHEMA",
         "cockpitKubeDiscover",
         function($q, KUBE_SCHEMA, cockpitKubeDiscover) {
-            return function CockpitKubeWatch(type, namespace, callback) {
-                debug("creating kube watch:", type, namespace);
+            return function CockpitKubeWatch(path, callback) {
+                debug("creating watch:", path);
 
                 /* Used to track the last resource for restarting query */
                 var lastResource;
@@ -166,9 +166,6 @@
 
                 /* The http options */
                 var http = null;
-
-                /* The base api endpoint */
-                var schema = KUBE_SCHEMA[type] || KUBE_SCHEMA[""];
 
                 /* Waiting to do the next http request */
                 var wait = null;
@@ -289,13 +286,14 @@
                         }
 
                         var meta = object.metadata;
-                        if (!meta || !meta.uid || object.apiVersion != "v1" || !object.kind) {
+                        if (!meta || !meta.uid || !object.kind) {
                             console.warn("invalid kube object: ", object);
                             continue;
                         }
 
                         lastResource = meta.resourceVersion;
 
+                        /* We track objects here so we can restart watches */
                         var uid = meta.uid;
                         if (frame.type == "DELETED")
                             delete objects[uid];
@@ -315,13 +313,7 @@
                         return;
 
                     var full = true;
-                    var uri = schema.api + "/watch";
-                    var params;
-
-                    if (!schema.global && namespace)
-                        uri += "/namespaces/" + namespace;
-
-                    uri += "/" + type;
+                    var uri = path + "?watch=true";
 
                     /*
                      * If we have a last resource we can guarantee that we don't miss
@@ -329,7 +321,7 @@
                      * have to list everything again. Still watch at the same time though.
                      */
                     if (lastResource) {
-                        uri += "?resourceVersion=" + lastResource;
+                        uri += "&resourceVersion=" + encodeURIComponent(lastResource);
                         full = false;
                     }
 
@@ -374,7 +366,7 @@
                         if (stopping)
                             return;
 
-                        var msg = "watching kube " + type + " failed: ";
+                        var msg = "watching " + path + " failed:";
                         var problem = options.problem;
                         var status = response.status;
 
@@ -402,7 +394,7 @@
                             load_finish(response);
 
                         } else if (!blocked) {
-                            console.warn("watching kube " + type + " didn't block");
+                            console.warn("watching kube " + path + " didn't block");
 
                         } else {
                             start_watch();
@@ -456,7 +448,7 @@
         function($q, $injector) {
             var content_type = "Content-Type";
             var json_type = "application/json";
-            return function CockpitHttpRequest(method, path, body, config) {
+            return function CockpitKubeRequest(method, path, body, config) {
                 var defer = $q.defer();
                 var connect, channel;
 
