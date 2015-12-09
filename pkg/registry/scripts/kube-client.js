@@ -302,7 +302,7 @@
             function create_watch(type) {
                 var path = resource_path([type, "", only_namespace]);
                 watches[type] = new KubeWatch(path, handle_frames);
-            }
+            } 
 
             function handle_frames(frames) {
                 if (batch === null)
