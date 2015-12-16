@@ -21,7 +21,9 @@
     "use strict";
 
     angular.module('openshift.projects', [
-        'ngRoute'
+        'ngRoute',
+        'ui.cockpit',
+        'kubeClient'
     ])
 
     .config(['$routeProvider',
@@ -34,10 +36,229 @@
         }
     ])
 
+    .factory("projectsLoader", [
+        "kubeLoader",
+        function(loader) {
+
+            /* Called when we have to load images via imagestreams */
+            function handle_namespaces() {
+                loader.watch("namespaces").catch(function(response) {
+                    loader.listen(handle_namespace);
+                });
+            }
+
+            function handle_namespace(imagestream) {
+                var meta = imagestream.metadata || { };
+                var status = imagestream.status || { };
+                angular.forEach(status.tags || [ ], function(tag) {
+                    angular.forEach(tag.items || [ ], function(item) {
+                        var link = loader.resolve("Image", item.image);
+                        if (link in loader.objects)
+                            return;
+
+                        /* An interim object while we're loading */
+                        var interim = { kind: "Image", apiVersion: "v1", metadata: { name: item.image } };
+                        loader.handle(interim);
+
+                        var name = meta.name + "@" + item.image;
+                        loader.load("ImageStreamImage", name, meta.namespace).then(function(resource) {
+                            var image = resource.image;
+                            if (image) {
+                                image.kind = "Image";
+                                loader.handle(image);
+                            }
+                        }, function(response) {
+                            console.warn("couldn't load image: " + response.statusText);
+                            interim.metadata.resourceVersion = "invalid";
+                        });
+                    });
+                });
+            }
+
+            return {
+                watch: function() {
+                    loader.watch("projects").catch(function(response) {
+                        loader.listen(handle_namespaces());
+                    });
+                    
+                }
+            };
+        }
+    ])
+
+      .directive('debug', function () {
+        var defaultType = "json";
+
+        return {
+          scope: {
+            value: '=debug'
+          },
+          templateUrl: function (tElement, tAttrs) {
+            var type = tAttrs['type'] || defaultType;
+            var tpl;
+            switch (type) {
+              case "json":
+                //tpl = '<pre ng-bind="value | json"></pre>';
+                tpl = "./json.html";
+                break;
+              case "type":
+                tpl = '<pre>Type: {{value | type}}</pre>';
+                break;
+              case "array":
+                var innerType = tAttrs['innerType'] || defaultType;
+                tpl = '<div ng-repeat="el in value" debug="el" type="' + innerType + '">{{el}}</div>';
+                break;
+              case "full":
+                tpl = '<div debug="value" type="type"></div><div debug="value" type="json"></div>';
+                break;
+              default:
+                tpl = '<b>Unknown debug type "' + type + '" for</b><pre>{{value}}</pre>';
+                break;
+            }
+            return tpl;
+          }
+        };
+      })
+    .controller('AddUserDialogCtrl', [
+        '$q',
+        '$scope',
+        "kubeMethods",
+        function($q, $scope, kubeMethods) {
+            var user_json = {
+              "kind": "User",
+              "apiVersion": "v1",
+              "metadata": {
+                "name": null
+              },
+            };
+            var namespace = "default";
+
+            $scope.addUser = function(user_name) {
+                user_json.metadata.name = user_name;
+                var defer = $q.defer();
+                defer.reject(new Error("This is a global failure message"));
+                
+/*                if(user_name) {
+
+                    var ex1 = new Error("This field is invalid");
+                    ex1.target = "#control-1";
+                    $scope.inputErrors = [ex1];
+                    defer.reject();
+                }*/
+                var promise = kubeMethods.create(user_json, namespace)
+                    .then(function(data) {
+                        console.log('My first promise succeeded', data);
+                            $scope.bigError = new Error("This is a global failure message");
+                            defer.reject(new Error("This is a global failure message"));
+                        }, function(error) {
+                            console.log('My first promise failed', error);
+                            $scope.bigError = new Error("This is a global failure message");
+                            defer.reject();
+                        });
+                return promise;
+            };
+        }
+    ])
     .controller('ProjectsCtrl', [
         '$scope',
-        function($scope) {
+        'kubeLoader',
+        'kubeSelect',
+        '$modal',
+        function($scope, loader, select, $modal) {
+            $scope.addProjectDialog = function() {
+                $modal.open({
+                    controller: 'AddUserDialogCtrl',
+                    templateUrl: 'views/projects/add-user-dialog.html',
+                    resolve: {
+                        exampleData: function() {
+                            return [1, 2, 3];
+                        }
+                    },
+                }).result.then(function(response) {
+                    console.log("dialog response", response);
+                }, function(reject) {
+                    console.log("dialog reject", reject);
+                });
+            };
+
+            loader.watch(["users"]);
+            loader.watch(["groups"]);
+            loader.watch(["policybindings"]);
+            loader.watch(["projects"]);
+            loader.load("projects", null, null);
             /* nothing here yet */
+            $scope.users = function() {
+                return select().kind("User");
+            };
+
+            $scope.groups = function() {
+                return select().kind("Group");
+            };
+
+            $scope.policybindings = function() {
+                return select().kind("PolicyBinding");
+            };
+
+            $scope.projects = function() {
+                return select().kind("Project");
+            };
+
+
+/* 
+                var name_list = {
+                    usernames: null,
+                    groupnames: null
+                };
+               $scope.get_all_members = function get_all_members() {
+                    name_list.usernames = [];
+                    name_list.groupnames = [];
+
+                    if (lists.Group) {
+                        $.each( $scope.groups, function(index,value){
+                            console.log("Index = " + index + " value = " + value.metadata.name);
+                            name_list.groupnames.push(value.metadata.name);
+                            if (value.users) {
+                                console.log("users = "+value.users);
+                                var userl = String(value.users).split(",");
+                                for (var i = userl.length - 1; i >= 0; i--) {
+                                    name_list.usernames.push(userl[i]);
+                                };
+                            }
+                        });
+                    }
+                    if (lists.User) {
+                        $.each( $scope.users, function(index,value){
+                            console.log("Index = " + index + " value = " + value.metadata.name);
+                            name_list.usernames.push(value.metadata.name);
+                            if (value.groups) {
+                                console.log("groups = "+value.groups);
+                                var groupl = value.groups.split(",");
+                                for (var i = groupl.length - 1; i >= 0; i--) {
+                                    name_list.groupnames.push(groupl[i]);
+                                };
+                            }
+                        });
+                    }
+                    return name_list;
+                }*/
+
+                $scope.formatMembers = function format_members(members, kind) {
+                    var mlist = "";
+                    if (!members)
+                        return mlist;
+                    if (members.length <= 1) {
+                        for (var i = members.length - 1; i >= 0; i--) {
+                            mlist += members[i] + ",";
+                        }
+                    } else {
+                        if (kind === "Groups") {
+                            mlist = members.length + " " + kind;
+                        } else if (kind === "Users") {
+                            mlist = members.length + " " + kind;
+                        }
+                    }
+                    return mlist;
+                };
         }
     ]);
 

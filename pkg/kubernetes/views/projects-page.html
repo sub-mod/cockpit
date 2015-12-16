@@ -1,23 +1,23 @@
 <div>
-    <table listing-table class="listing projects-listing">
+    <table listing-table class="listing details-listing">
         <thead ng-if="!quiet">
             <tr>
                 <td colspan="4">
-                    <button title="Add Projects" id="add-project" ng-click="addProjectDialog()" 
-                        class="pficon-add-circle-o" translatable="yes"></button>
-                    <h3 translatable="yes" ng-click="console.log(users())">Projects</h3>
+                    <span style="float: right;">
+                    <button title="Add Projects" id="add-project" class="btn btn-primary fa fa-plus "
+                        data-toggle="modal" data-target="#project-dialog"></button>
+                    </span>
+                    <h3 translatable="yes">Projects</h3>
                 </td>
             </tr>
             <tr>
                 <th translatable="yes">Name</th>
-                <th translatable="yes">Description</th>
                 <th translatable="yes">Members</th>
             </tr>
         </thead>
-        <tbody ng-repeat="item in projects() " class="active"   >
+        <tbody ng-repeat="item in projects " class="active" ng-click="console.log(policybindings)"  >
             <tr class="listing-item">
                 <th>{{item.metadata.name}}</th>
-                <td>{{item.metadata.annotations["openshift.io/description"]}}</td>
                 <td></td>
             </tr>
             <tr class="listing-panel" ng-if="selected(id)">
@@ -28,22 +28,18 @@
         <thead ng-if="!quiet">
             <tr>
                 <td colspan="4">
-                    <button title="Add Groups" id="add-group" ng-click="addGroupDialog()" 
-                        class="pficon-add-circle-o" translatable="yes"></button>
                     <h3 translatable="yes">Groups</h3>
                 </td>
             </tr>
             <tr>
                 <th translatable="yes">Name</th>
-                <th translatable="yes">Description</th>
                 <th translatable="yes">Members</th>
             </tr>
         </thead>
-        <tbody ng-repeat="item in groups() " class="active" >
+        <tbody ng-repeat="item in groups " class="active" >
             <tr class="listing-item">
                 <th>{{item.metadata.name}}</th>
-                <td></td>
-                <td>{{formatMembers(item.users, 'Users')}}</td>
+                <td>{{formatMembers(item.users)}}</td>
             </tr>
             <tr class="listing-panel" ng-if="selected(id)">
                 <td listing-panel kind="Node" colspan="4"></td>
@@ -53,22 +49,18 @@
         <thead ng-if="!quiet">
             <tr>
                 <td colspan="4">
-                    <button title="Add Users" id="add-user" ng-click="addUserDialog()" 
-                        class="pficon-add-circle-o" translatable="yes"></button>
                     <h3 translatable="yes">Users</h3>
                 </td>
             </tr>
             <tr>
                 <th translatable="yes">Name</th>
-                <th translatable="yes">Identity</th>
-                <th translatable="yes">Member of</th>
+                <th translatable="yes">Members</th>
             </tr>
         </thead>
-        <tbody ng-repeat="item in users() " class="active" >
+        <tbody ng-repeat="item in users " class="active" >
             <tr class="listing-item">
                 <th>{{item.metadata.name}}</th>
-                <td>{{formatMembers(item.identities, 'Identities')}}</td>
-                <td>{{formatMembers(item.groups, 'Groups')}}</td>
+                <td>{{formatMembers(item.groups)}}</td>
             </tr>
             <tr class="listing-panel" ng-if="selected(id)">
                 <td listing-panel kind="Node" colspan="4"></td>
