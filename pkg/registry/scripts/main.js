@@ -24,8 +24,8 @@
         'ngRoute',
         'ui.bootstrap',
         'registry.dashboard',
-        'openshift.images',
-        'openshift.projects',
+        'registry.images',
+        'registry.projects',
         'kubeClient',
         'kubeClient.cockpit'
     ])

@@ -1,0 +1,28 @@
+</div ng-if="show">
+    <table listing-table class="listing projects-listing">
+        <thead ng-if="!quiet">
+            <tr>
+                <td colspan="4">
+                    <button title="Add Users" id="add-user" ng-click="addUserDialog()" 
+                        class="pficon-add-circle-o" translatable="yes"></button>
+                    <h3 translatable="yes">Users</h3>
+                </td>
+            </tr>
+            <tr>
+                <th translatable="yes">Name</th>
+                <th translatable="yes">Identity</th>
+                <th translatable="yes">Member of</th>
+            </tr>
+        </thead>
+        <tbody ng-repeat="item in users() " class="active" >
+            <tr class="listing-item">
+                <th>{{item.metadata.name}}</th>
+                <td>{{formatMembers(item.identities, 'Identities')}}</td>
+                <td>{{formatMembers(item.groups, 'Groups')}}</td>
+            </tr>
+            <tr class="listing-panel" ng-if="selected(id)">
+                <td listing-panel kind="Node" colspan="4"></td>
+            </tr>
+        </tbody>
+    </table>
+</div>

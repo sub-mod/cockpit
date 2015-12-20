@@ -1,0 +1,23 @@
+<modal-dialog>
+    <div class="modal-header">
+        <h4 class="modal-title" translatable="yes">Add User</h4>
+    </div>
+    <div class="modal-body">
+        <table class="cockpit-form-table">
+            <tr>
+                <td class="top">
+                    <label class="control-label" for="control-1" translatable="yes">
+                        Name
+                    </label>
+                </td>
+                <td>
+                    <input id="user_name" ng-model="user_name" class="form-control" type="text" >
+                </td>
+            </tr>
+        </table>
+    </div>
+    <div class="modal-footer">
+        <button class="btn btn-default btn-cancel">Cancel</button>
+        <button class="btn btn-primary" ng-click="complete(addUser(user_name))">Add</button>
+    </div>
+</modal-dialog>
