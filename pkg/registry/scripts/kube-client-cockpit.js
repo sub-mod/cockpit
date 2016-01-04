@@ -239,6 +239,16 @@
                         defer.resolve();
                 }
 
+                function isStatusMessage(data) {
+                    data = JSON.stringify(data);
+                    data = data.replace("\n", "");
+                    try {
+                        data = JSON.parse(data);
+                    } catch (ex) {
+                        return false;
+                    }
+                    return true;
+                }
                 /*
                  * Each change is sent as an individual line from Kubernetes
                  * but they may not arrive exactly that way, so we buffer
@@ -249,7 +259,7 @@
                 function handleWatch(data) {
                     if (buffer)
                         data = buffer + data;
-
+                    console.log(typeof(data));
                     var lines = data.split("\n");
                     var i, length = lines.length - 1;
 
