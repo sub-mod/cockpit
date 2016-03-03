@@ -934,7 +934,7 @@
             registerFilter({
                 name: "namespace",
                 digest: function(arg) {
-                    if (typeof arg === "string")
+                    if (!arg || typeof arg === "string" )
                         return arg;
                     var meta = arg.metadata;
                     return meta ? meta.namespace : null;
@@ -1141,6 +1141,20 @@
                 });
             }
 
+            function updateResource(resource, namespace) {
+                var path = resourcePath([resource.kind, null, namespace || "default"]);
+                var promise = new KubeRequest("PUT", path, JSON.stringify(resource))
+                return promise.then(function(response) {
+                    debug("updated resource:", path, response.data);
+                    if (response.data.kind)
+                        loader.handle(response.data);
+                    }, function(response) {
+                        var resp = response.data;
+                        debug("update failed:", path, resp || response);
+                        return $q.reject(resp || response);
+                    });
+            }
+
             function patchResource(resource, patch) {
                 var path = resourcePath([resource]);
                 var body = JSON.stringify(patch);
@@ -1203,6 +1217,7 @@
                 "delete": deleteResource,
                 "check": checkResource,
                 "patch": patchResource,
+                "update": updateResource,
             };
         }
     ])

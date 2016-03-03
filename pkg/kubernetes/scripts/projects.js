@@ -66,6 +66,51 @@
                     return select().kind("Project").name(namespace).one();
                 };
 
+                $scope.roles = function(member) {
+                    var oc_roles = rolefilterService.getRoles(member, namespace);
+                    var defined_roles = rolefilterService.getDefinedRoles();
+                    var roles = [];
+                    angular.forEach(oc_roles, function(role) {
+                        if (role in defined_roles)
+                            roles.push(defined_roles[role]);
+                    });
+                    return roles.join();
+                }
+
+                $scope.isRoleExists = function(member, role) {
+                    var oc_roles = rolefilterService.getRoles(member, namespace);
+                    if(oc_roles.indexOf(role) !== -1) {
+                        return true;
+                    }
+                    return false;
+                }
+
+                $scope.isRoles = function(member) {
+                    var oc_roles = rolefilterService.getRoles(member, namespace);
+                    if(oc_roles.length == 0) {
+                        return false;
+                    }
+                    return true;
+                }
+
+                $scope.changeRole = function(member, role) {
+                    var default_policybinding = select().kind("PolicyBinding").namespace(namespace).name(":default").one();
+                    if(default_policybinding){
+                        var policybindings = select().kind("PolicyBinding").namespace(namespace);
+                        angular.forEach(policybindings, function(pb) {
+                            console.log(pb);
+                        });
+                    } else {
+
+                    }
+
+
+                    projectAction.addRoles(namespace, member, role, action);
+                    console.log("changeRole role "+ role);
+                }
+
+                $scope.rolefilter = rolefilterService;
+
             } else {
 
                 $scope.listing = new ListingState($scope);
@@ -92,6 +137,37 @@
 
             $scope.groups = function() {
                 return select().kind("Group");
+            };
+        }
+    ])
+
+    .factory('rolefilterService', [
+        'projectData',
+        'kubeSelect',
+        'kubeLoader',
+        function(projectData, select, loader) {
+
+            var roles = {"admin":"Admin" , "edit":"Push", "view":"Pull" };
+
+            function getRoles(member, projectName) {
+                var roleBinds = projectData.subjectRoleBindings(member, projectName);
+                var roleBind, meta, ret = [];
+                angular.forEach(roleBinds, function(roleBind) {
+                    meta = roleBind.metadata || { };
+                    if (meta.name)
+                        ret.push(meta.name);
+                });
+                return ret;
+            }
+
+            function getDefinedRoles() {
+                return roles;
+                //return Object.keys(roles);
+            }
+           
+            return {
+                getRoles: getRoles,
+                getDefinedRoles: getDefinedRoles,
             };
         }
     ])
@@ -300,11 +376,65 @@
                     templateUrl: 'views/add-group-dialog.html',
                 });
             }
+
+            function addMemberRole(namespace, member, role) {
+                return $modal.open({
+                    controller: 'RoleBindingNewCtrl',
+                    templateUrl: 'views/add-member-role-dialog.html',
+                    resolve: {
+                        fields: function () {
+                            
+                            var items = {
+                                //role: role,
+                                //namespace: namespace,
+                                //user_name: member.kind == "User"? member.metadata.name : "",
+                                //group_name: member.kind == "Group"? member.metadata.name : "",
+                                //member: member.metadata.name,
+                                //
+
+
+
+                                //kind: member.kind,
+                            }
+                            return items;
+                        },
+                        
+                    },
+                });
+            }
+
+            function addRoles(namespace, member, role, action) {
+                return $modal.open({
+                    controller: 'RoleBindingNewCtrl',
+                    templateUrl: function() {
+                        if (action == "remove")
+                            return 'views/remove-role-dialog.html';
+                        else
+                            return 'views/add-role-dialog.html';
+                    },
+                    resolve: {
+                        fields: function () {
+                            var items = {
+                                role: role,
+                                namespace: namespace,
+                                user_name: member.kind == "User"? member.metadata.name : "",
+                                group_name: member.kind == "Group"? member.metadata.name : "",
+                                member: member.metadata.name,
+                                kind: member.kind,
+                            }
+                            return items;
+                        }
+                    },
+                });
+            }
+
             return {
                 createProject: createProject,
                 modifyProject: modifyProject,
                 createGroup: createGroup,
                 createUser: createUser,
+                addRoles: addRoles,
+                addMemberRole: addMemberRole,
             };
         }
     ])
@@ -558,6 +688,75 @@
             };
 
             angular.extend($scope, dialogData);
+        }
+    ])
+
+    .controller('RoleBindingNewCtrl', [
+        '$q',
+        '$scope',
+        "kubeMethods",
+        'projectData',
+        'kubeSelect',
+        'kubeLoader',
+        'fields',
+        function($q, $scope, methods, util, select, loader, fields) {
+            $scope.fields = fields;
+            loader.watch("users");
+            $scope.users = function() {
+                return select().kind("User");
+            };
+
+            $scope.performRemove = function performRemove(member) {
+                console.log($scope);
+                var defer = $q.defer();
+                var role = $scope.fields.role.trim();
+                var namespace = $scope.fields.namespace.trim();
+                var user_name = $scope.fields.user_name.trim();
+                var group_name = $scope.fields.group_name.trim();
+                var kind = $scope.fields.kind.trim();
+
+                var rolebinding = {
+                    kind: "RoleBinding",
+                    apiVersion: "v1",
+                    metadata: {
+                        name: role,
+                        namespace: namespace,
+                        },
+                    userNames: [user_name],
+                    groupNames: [group_name],
+                    subjects: [{ kind: kind, name:member }],
+                    roleRef: { name: role }
+                };
+                console.log(rolebinding);
+                return defer.resolve();
+                //return methods.update(project, namespace);
+            };
+
+            $scope.performAppend = function performAppend() {
+                console.log($scope);
+                var defer = $q.defer();
+                var role = $scope.fields.role.trim();
+                var namespace = $scope.fields.namespace.trim();
+                var user_name = $scope.fields.user_name.trim();
+                var group_name = $scope.fields.group_name.trim();
+                var kind = $scope.fields.kind.trim();
+
+                var rolebinding = {
+                    kind: "RoleBinding",
+                    apiVersion: "v1",
+                    metadata: {
+                        name: role,
+                        namespace: namespace,
+                        },
+                    userNames: [user_name],
+                    groupNames: [group_name],
+                    subjects: [{ kind: kind, name:member }],
+                    roleRef: { name: role }
+                };
+                console.log(rolebinding);
+                return defer.resolve();
+                //return methods.create(project, namespace);
+            };
         }
     ])
 

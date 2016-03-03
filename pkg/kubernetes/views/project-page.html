@@ -33,18 +33,46 @@
             <tr class="listing-item">
                 <td>{{ user.metadata.name }}</td>
                 <td>
-                    <span ng-repeat="role in subjectRoleBindings(user, project().metadata.name)">{{ role.metadata.name }} </span>
+                    <div class="btn-group bootstrap-select namespace-filter" dropdown>
+                        <button class="btn btn-default dropdown-toggle" type="button" dropdown-toggle>
+                            <span class="pull-left">
+                                <span ng-if="isRoles(user.metadata.name)" translatable="yes">{{ roles(user.metadata.name) }}</span>
+                            </span>
+                            <span class="caret"></span>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li ng-repeat="(oc_role, display_role) in rolefilter.getDefinedRoles()"
+                                ng-class="{ checked: isRoleExists(user.metadata.name, oc_role) }">
+                                <a ng-click="changeRole(user, oc_role)">{{display_role}}</a>
+                            </li>
+                        </ul>
+                    </div>
                 </td>
-                <td></td>
+                <td>
+                </td>
             </tr>
         </tbody>
         <tbody ng-repeat="group in groups()" ng-if="subjectIsMember(group, project().metadata.name)">
             <tr class="listing-item">
                 <td>{{ group.metadata.name }}</td>
                 <td>
-                    <span ng-repeat="role in subjectRoleBindings(group, project().metadata.name)">{{ role.metadata.name }} </span>
+                    <div class="btn-group bootstrap-select namespace-filter" dropdown>
+                        <button class="btn btn-default dropdown-toggle" type="button" dropdown-toggle>
+                            <span class="pull-left">
+                                <span ng-if="isRoles(group.metadata.name)" translatable="yes">{{ roles(group.metadata.name) }}</span>
+                            </span>
+                            <span class="caret"></span>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li ng-repeat="(oc_role, display_role) in rolefilter.getDefinedRoles()"
+                                ng-class="{ checked: isRoleExists(group.metadata.name, oc_role) }">
+                                <a ng-click="reset(oc_role)">{{display_role}}</a>
+                            </li>
+                        </ul>
+                    </div>
                 </td>
-                <td></td>
+                <td>
+                </td>
             </tr>
         </tbody>
         <thead>

@@ -38,6 +38,20 @@
             <tbody colspan="3" ng-repeat="group in groups()" ng-if="subjectIsMember(group, project().metadata.name)">
                 <tr class="listing-item inner-project-listing">
                     <td>{{ group.metadata.name }}</td>
+
+<!--                     <td>
+                        <div id="control-2" class="btn-group bootstrap-select form-control" dropdown>
+                            <button class="btn btn-default dropdown-toggle" dropdown-toggle>
+                                <span class="pull-left">{{ select. value }}</span>
+                                <span class="caret"></span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li ng-repeat="role in subjectRoleBindings(group, project().metadata.name)" ng-class="{active: role.metadata.name == select.value}">
+                                    <a ng-click="select.value = role.metadata.name">{{ role.metadata.name }}</a>
+                                </li>
+                            </ul>
+                        </div>
+                    </td> -->
                     <td>
                         <span ng-repeat="role in subjectRoleBindings(group, project().metadata.name)">{{ role.metadata.name }} </span>
                     </td>
