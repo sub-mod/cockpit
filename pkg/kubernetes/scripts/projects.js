@@ -52,7 +52,8 @@
         'projectData',
         'projectActions',
         'ListingState',
-        function($scope, $routeParams, $location, select, loader, projectData, projectAction, ListingState) {
+        'roleActions',
+        function($scope, $routeParams, $location, select, loader, projectData, projectAction, ListingState, roleAction) {
             loader.watch("users");
             loader.watch("groups");
             loader.watch("policybindings");
@@ -82,6 +83,7 @@
             }
 
             angular.extend($scope, projectData);
+            angular.extend($scope, roleAction);
             angular.extend($scope, projectAction);
 
             $scope.users = function() {
@@ -98,7 +100,20 @@
         'kubeSelect',
         'kubeLoader',
         function(select, loader) {
-
+            loader.watch("users");
+            loader.watch("groups");
+            function getAllMembers() {
+                var users = select().kind("User");
+                var groups = select().kind("Groups");
+                var members = [];
+                angular.forEach(users, function(user) {
+                    members.push(user);
+                });
+                angular.forEach(groups, function(group) {
+                    members.push(group);
+                });
+                return members;
+            }
             /*
              * Data loading hacks:
              *
@@ -202,6 +217,7 @@
                 subjectRoleBindings: subjectRoleBindings,
                 subjectIsMember: subjectIsMember,
                 formatMembers: formatMembers,
+                getAllMembers: getAllMembers,
             };
         }
     ])
@@ -289,6 +305,199 @@
                 modifyProject: modifyProject,
                 createGroup: createGroup,
                 createUser: createUser,
+            };
+        }
+    ])
+
+    .factory('roleActions', [
+        '$modal',
+        function($modal) {
+            function addMember(namespace) {
+                return $modal.open({
+                    controller: 'MemberNewCtrl',
+                    templateUrl: 'views/add-member-role-dialog.html',
+                    resolve: {
+                        fields : function(){
+                            var fields = {};
+                            fields.namespace = namespace;
+                            return fields;
+                        }
+                    },
+                });
+            }
+            return {
+                addMember: addMember,
+            };
+        }
+    ])
+ 
+    .factory("roleData", [
+        'kubeSelect',
+        'kubeLoader',
+        "kubeMethods",
+        function(select, loader, methods) {
+            loader.watch("policybindings");
+            var roles = [{ ocRole: "registry-admin", displayRole :"Admin"},
+                { ocRole:"registry-editor", displayRole :"Push" },
+                { ocRole:"registry-viewer", displayRole :"Pull" }];
+
+            function getPolicyBinding(namespace){
+                return select().kind("PolicyBinding").namespace(namespace).name(":default").one();
+            }
+            function getDefinedRoles() {
+                return roles;
+            }
+            function appendUsernames(member, userNames) {
+                if (!userNames)
+                    userNames = [];
+                if (userNames.indexOf(member) == -1) {
+                    userNames.push(member);
+                }
+                return userNames;
+            }
+            function appendGroupNames(member, groupNames) {
+                if (!groupNames)
+                    groupNames = [];
+                if (groupNames.indexOf(member) == -1) {
+                    groupNames.push(member);
+                }
+                return groupNames;
+            }
+            function updateSubjects(member, subjects) {
+                var found = false;
+                if (!subjects)
+                    subjects = [];
+                if (subjects.length === 0) {
+                    subjects.push(member);
+                } else {
+                    angular.forEach(subjects , function(s){
+                        if (s.kind === member.kind && s.name === member.name) {
+                            found = true;
+                        }
+                    });
+                    if (!found)
+                        subjects.push(member);
+                }
+                return subjects;
+            }
+            function updateRoleData(member, kind, roleBinding) {
+                if (kind === "User")
+                    roleBinding.userNames = appendUsernames(member, roleBinding.userNames);
+                else
+                    roleBinding.groupNames = appendGroupNames(member, roleBinding.groupNames);
+
+                roleBinding.subjects = updateSubjects({
+                        kind: kind,
+                        name: member
+                    }, roleBinding.subjects);
+                return roleBinding;
+            }
+
+            function getRoleBindings(namespace) {
+                var rolebindings = null;
+                var default_policybinding = select().kind("PolicyBinding").namespace(namespace).name(":default");
+                if(default_policybinding.one()){
+                    var policybindings = default_policybinding.one();
+                    rolebindings = policybindings.roleBindings;
+                } 
+                return rolebindings;
+            }
+            function patchPolicBinding(member, role, namespace) {
+                var i;
+                var roleBinding;
+                var roleBindingDefault = {
+                    kind: "RoleBinding",
+                    apiVersion: "v1",
+                    metadata: {
+                        name: role,
+                        namespace: namespace,
+                        creationTimestamp: null,
+                    },
+                    userNames: [],
+                    groupNames: [],
+                    subjects: [],
+                    roleRef: {
+                        name: role
+                    }
+                };
+                var roleBindings = getRoleBindings(namespace);
+                var patchData = { "roleBindings": roleBindings };
+                angular.forEach(roleBindings, function(rb) {
+                    if(rb.name === role) {
+                        roleBinding = rb.roleBinding;
+                    }
+                });
+                if (!roleBinding) {
+                    //If roleBinding doesn't exists, then create.
+                    roleBinding = updateRoleData(member.metadata.name, member.kind, roleBindingDefault);
+                    return methods.create(roleBinding, namespace);   
+                } else {
+                    //If roleBinding exists, then patch.
+                    roleBinding = updateRoleData(member.metadata.name, member.kind, roleBinding);
+                    for (i = patchData.roleBindings.length - 1; i >= 0; i--) {
+                        if(patchData.roleBindings[i].name === role) {
+                            patchData.roleBindings[i].roleBinding = roleBinding;
+                        }
+                    }
+                    var patchObj = getPolicyBinding(namespace);
+                    return methods.patch(patchObj, patchData);
+                }   
+            }
+
+            return {
+                getDefinedRoles: getDefinedRoles,
+                patchPolicBinding: patchPolicBinding,
+            };
+        }
+    ])
+
+    .controller('MemberNewCtrl', [
+        '$q',
+        '$scope',
+        'projectData',
+        'roleData',
+        'fields',
+        function($q, $scope, projectData, roleData, fields) {
+            $scope.select = {
+                member: 'Select Members',
+                members: projectData.getAllMembers(),
+                displayRole: 'Select Role',
+                roles: roleData.getDefinedRoles(),
+                kind: "",
+                ocRole: "",
+            };
+
+            var namespace = fields.namespace;
+
+            function validate() {
+                var defer = $q.defer();
+                var memberName = $scope.select.member;
+                var role = $scope.select.ocRole;
+                var ex;
+
+                if (!memberName || memberName === 'Select Members') {
+                    ex = new Error("Please select a valid Member");
+                    ex.target = "#add_member";
+                    defer.reject(ex);
+                }
+                if (!role || role === 'Select Role') {
+                    ex = new Error("Please select a valid Role");
+                    ex.target = "#add_role";
+                    defer.reject(ex);
+                }
+
+                if (!ex) {
+                    defer.resolve();
+                }
+
+                return defer.promise;
+            }            
+            $scope.performCreate = function performCreate() {
+                var role = $scope.select.ocRole;
+                var memberObj = $scope.select.memberObj;
+                return validate().then(function() {
+                    return roleData.patchPolicBinding(memberObj, role, namespace);
+                });
             };
         }
     ])
