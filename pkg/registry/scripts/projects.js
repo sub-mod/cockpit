@@ -57,6 +57,10 @@
 
             var namespace = $routeParams["namespace"] || "";
             if (namespace) {
+                var proj = select().kind("Project").name(namespace);
+                if(!proj.one())
+                    $location.path("/projects");
+
                 $scope.listing = new ListingState($scope);
 
                 $scope.project = function() {
@@ -263,10 +267,76 @@
                     templateUrl: 'views/add-group-dialog.html',
                 });
             }
+            function changeProject(namespaceObj) {
+                return $modal.open({
+                    controller: 'ProjectChangeCtrl',
+                    templateUrl: 'views/change-project-dialog.html',
+                    resolve: {
+                        fields: function(){
+                            var fields = {};
+                            fields.project = namespaceObj;
+                            return fields;
+                        }
+                    },
+                });
+            }
+            function deleteProject(namespaceObj) {
+                return $modal.open({
+                    controller: 'ProjectChangeCtrl',
+                    templateUrl: 'views/delete-project.html',
+                    resolve: {
+                        fields: function(){
+                            var fields = {};
+                            fields.project = namespaceObj;
+                            return fields;
+                        }
+                    },
+                });
+            }
             return {
                 createProject: createProject,
                 createGroup: createGroup,
                 createUser: createUser,
+                changeProject: changeProject,
+                deleteProject: deleteProject,
+            };
+        }
+    ])
+
+    .controller('ProjectChangeCtrl', [
+        '$q',
+        '$scope',
+        'kubeMethods',
+        '$location',
+        'fields',
+        function($q, $scope, methods, $location, fields) {
+            $scope.fields = fields;
+            $scope.fields.name = fields.project.metadata.name;
+            $scope.fields.display = fields.project.metadata.annotations["openshift.io/display-name"];
+            $scope.fields.description = fields.project.metadata.annotations["openshift.io/description"];
+
+            $scope.performDelete = function performDelete() {
+                var display = $scope.fields.display.trim();
+                var description = $scope.fields.description.trim();
+
+                var project = fields.project;
+                return methods.delete(project)
+                    .then(function() {
+                        $location.path("/projects");
+                    });
+            };
+
+            $scope.performChange = function performChange() {
+                var display = $scope.fields.display.trim();
+                var description = $scope.fields.description.trim();
+                var metadata = { metadata: {
+                        annotations: {
+                            "openshift.io/description": description,
+                            "openshift.io/display-name": display,
+                        }                    
+                    }
+                };
+                return methods.patch(fields.project, metadata);
             };
         }
     ])

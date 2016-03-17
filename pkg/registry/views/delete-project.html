@@ -1,0 +1,12 @@
+<modal-dialog>
+    <div class="modal-header">
+        <h4 class="modal-title" translatable="yes">Delete Project '{{ fields.project.metadata.name }}'</h4>
+    </div>
+    <div class="modal-body">
+        <p> All objects in the '{{ fields.project.metadata.name }}' project will be deleted </p>
+    </div>
+    <div class="modal-footer">
+        <button class="btn btn-default btn-cancel" translatable="yes">Cancel</button>
+        <button class="btn btn-primary" ng-click="complete(performDelete())" translatable="yes">Delete</button>
+    </div>
+</modal-dialog>
